@@ -3,14 +3,20 @@
 
 #include <stdint.h>
 
-#define FAT_END_SEQUENCE	0xAA55
-#define FAT_BOOT_SIGNATURE	0x29
-#define FAT_ENTRY_SIZE		32
+#define FAT_END_SEQUENCE	    0xAA55
+#define FAT_BOOT_SIGNATURE	    0x29
+#define FAT_ENTRY_SIZE		    32
 
-#define FAT_ENTRY_FREE	0x00
-#define FAT_ENTRY_DEL1	0x05
-#define FAT_ENTRY_DEL2	0xE5
-#define FAT_ENTRY_DOTS	0x2E
+#define FAT_ENTRY_FREE	        0x00
+#define FAT_ENTRY_DEL1	        0x05
+#define FAT_ENTRY_DEL2	        0xE5
+#define FAT_ENTRY_DOTS	        0x2E
+
+#define FAT_LONG_NAME_CLUSTER   0x0000
+#define FAT_LONG_NAME_ATTR      0x0F
+#define FAT_LONG_NAME_TYPE      0x00
+#define FAT_LONG_NAME_LAST      0x40
+#define FAT_LONG_NAME_NUMBER    0x1F
 
 #define FAT_ATTR_READ_ONLY 		0x01
 #define FAT_ATTR_HIDDEN 		0x02
@@ -78,13 +84,23 @@ struct fat_directory_entry_t
 	uint16_t modify_time;					// 0x16
 	uint16_t modify_date;					// 0x18
 	uint16_t file_start;					// 0x1A
-	uint32_t file_size;						// 0x1C	
+	uint32_t file_size;						// 0x1C
+} __attribute__((packed));
+
+struct fat_long_name_directory_entry_t
+{
+    uint8_t number;                         // 0x00
+    uint16_t name1[5];                      // 0x01
+    uint8_t attr;                           // 0x0B
+    uint8_t type;                           // 0x0C
+    uint8_t checksum;                       // 0x0D
+    uint16_t name2[6];                      // 0x0E
+    uint16_t file_start;                    // 0x1A
+    uint16_t name3[2];                      // 0x1C
+
 } __attribute__((packed));
 
 typedef struct fat_directory_entry_t FENTRY;
-
-void do_it(void);
-void fat_display_info(void);
 
 int fat_init(void);
 uint32_t fat_get_chain_length(uint16_t start, int *err);
@@ -98,11 +114,15 @@ struct tm fat_convert_time(uint16_t date, uint16_t time);
 char *fat_join_filename(const char *name, const char *ext, char *result);
 
 uint32_t fat_read_file(void *buffer, uint32_t start_cluster, uint32_t offset, uint32_t size);
+uint32_t fat_write_file(void *buffer, uint32_t start_cluster, uint32_t offset, uint32_t size);
 
 int fat_get_entry(const char *path, struct fat_directory_entry_t *entry);
 int fat_get_entry_POS(uint16_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry);
 void fat_get_cluster_summary(uint32_t *free, uint32_t *use, uint32_t *bad, uint32_t *end);
 int fat_get_root_summary(uint32_t *free, uint32_t *used);
 void fat_get_boot_sector(struct fat_boot_sector_t *boot_sector);
+int fat_get_long_filename(uint16_t dir_start, uint32_t dir_pos, char *long_filename);
+
+uint32_t fat_add_cluster(uint16_t chain, uint32_t count);
 
 #endif

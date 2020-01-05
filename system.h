@@ -19,7 +19,7 @@ struct dir_t
 // Wpis w katalogu
 struct dir_entry_t
 {
-	char filename[256];
+	char filename[257];
 	uint32_t type;
 };
 

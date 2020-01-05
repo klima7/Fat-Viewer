@@ -6,8 +6,10 @@
 #include "file_list.h"
 #include "fat.h"
 
+// Lista otwartych plików
 static FLIST *files;
 
+// Funkcja inicjująca
 int system_init(void)
 {	
 	files = file_list_create();
@@ -47,6 +49,7 @@ DIR *opendir(const char *path)
 	DENTRY *sys_entry = dir->entries;
 	for(uint32_t i=0; i<entries_count; i++)
 	{
+	    // Pobranie wpisu z katalogu
 		struct fat_directory_entry_t fat_entry;
 		int res = fat_get_entry_POS(first_cluster, i, &fat_entry);
 		if(res)
@@ -55,8 +58,13 @@ DIR *opendir(const char *path)
 		    free(dir);
 		    return NULL;
         }
+
+		// Używkotnik nie zobaczy wpisów woluminowych ani systemowych
 		if(!fat_is_entry_visible(&fat_entry)) continue;
-		fat_join_filename((char*)fat_entry.name, (char*)fat_entry.ext, (char*)sys_entry->filename);
+
+		// Znalezienie długiej nazwy pliku lub użycie krótkiej jeśli długa nie istnieje
+        res = fat_get_long_filename(first_cluster, i, (char*)sys_entry->filename);
+        if(res) fat_join_filename((char*)fat_entry.name, (char*)fat_entry.ext, (char*)sys_entry->filename);
 		sys_entry++;
 	}
 
@@ -64,12 +72,14 @@ DIR *opendir(const char *path)
 	return dir;
 }
 
+// Funkcja zamykająca katalog do odczytu
 void closedir(DIR *dir)
 {
 	free(dir->entries);
 	free(dir);
 }
 
+// Funkcja odczytująca kolejny wpis z katalogu
 DENTRY *readdir(DIR *dir)
 {
 	if(dir->pos >= dir->entries_count)
@@ -81,6 +91,7 @@ DENTRY *readdir(DIR *dir)
 	return entry;
 }
 
+// Funkcja pobierająca metainformacje o pliku
 int stat(const char *path, STAT *stat)
 {
 	if(path == NULL || stat == NULL) return 1;

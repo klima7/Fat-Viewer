@@ -541,6 +541,31 @@ static void terminal_command_zip(int argc, char *argv)
     fclose(f3);
 }
 
+// Komenda "rename"
+static void terminal_command_rename(int argc, char *argv)
+{
+    // Sprawdzenie liczby argumentów
+    if (argc < 3) {
+        printf("Correct use: raname [old name] [new name]\n");
+        return;
+    }
+
+    // Znalezienie argumentów
+    char *old_name = terminal_get_token(argv, 1);
+    char *new_name = terminal_get_token(argv, 2);
+
+    // Stworzenie pełnych ścieżek
+    char full[MAX_PATH_LEN];
+    if (terminal_join_path(pwd, old_name, full) == NULL) {
+        printf("Path too long\n");
+        return;
+    }
+
+    // TODO
+
+    printf("Renamed\n");
+}
+
 // Funkcja pobierająca od użytkownika komendę
 static void terminal_read_command(char *command)
 {
@@ -592,6 +617,7 @@ static int terminal_execute_command(char *command)
 	else if(strcmp(command, "rootinfo") == 0) terminal_command_rootinfo(argc, command);
 	else if(strcmp(command, "get") == 0) terminal_command_get(argc, command);
 	else if(strcmp(command, "zip") == 0) terminal_command_zip(argc, command);
+	else if(strcmp(command, "rename") == 0) terminal_command_rename(argc, command);
 	else if(strcmp(command, "exit") == 0) return 1;
 	else printf("Invalid command\n");
 	
