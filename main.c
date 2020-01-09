@@ -25,36 +25,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// Wirtualne włożenie dysku do komputera
+	// Start
 	disc_set(disc);
-
-	// Uruchomienie systemu
-	system_init();
-
-	char *napis = "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
-                  "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, \n";
-
-	int res = fat_write_file(napis, 5, 0, strlen(napis)+1);
-	printf("Write res: %d\n", res);
-
-	// Uruchomienie terminala
+    int res = fat_init();
+    if(res != 0) return 0;
 	terminal_run();
 
 	return 0;

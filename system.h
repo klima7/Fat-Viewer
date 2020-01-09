@@ -11,9 +11,8 @@
 // Uchwyt do katalogu
 struct dir_t
 {
+    uint16_t start;
 	uint32_t pos;
-	struct dir_entry_t *entries;
-	uint32_t entries_count;
 };
 
 // Wpis w katalogu
@@ -38,17 +37,14 @@ struct stat_t
 	bool archive;
 	bool device;
 	uint32_t clusters_count;
-	uint16_t *clusters_chain;
+	uint16_t first_cluster;
 };
 
 // Uchwyt do pliku
 struct file_t
 {
-	uint16_t start_cluster;
-    uint32_t size;
+    char *path;
 	uint32_t pos;
-	bool read;
-	bool write;
 };
 
 typedef struct dir_t DIR;
@@ -57,13 +53,13 @@ typedef struct stat_t STAT;
 typedef struct file_t MYFILE;
 
 // Prototypy
-int system_init(void);
 DIR *opendir(const char *path);
 void closedir(DIR *dir);
-DENTRY *readdir(DIR *dir);
+int readdir(DIR *dir, DENTRY *entry);
 int stat(const char *path, STAT *stat);
 MYFILE *open(const char *path, const char *mode);
 void close(MYFILE *file);
 int read(void *buffer, uint32_t size, MYFILE *file);
+uint16_t get_next_cluster(uint16_t cluster);
 
 #endif

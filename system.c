@@ -3,21 +3,7 @@
 #include <string.h>
 #include "disc.h"
 #include "system.h"
-#include "file_list.h"
 #include "fat.h"
-
-// Lista otwartych plików
-static FLIST *files;
-
-// Funkcja inicjująca
-int system_init(void)
-{	
-	files = file_list_create();
-	if(files == NULL) return 1;
-	
-	fat_init();
-	return 0;
-}
 
 // Funkcja otwierająca katalog
 DIR *opendir(const char *path)
@@ -27,68 +13,48 @@ DIR *opendir(const char *path)
 	int res = stat(path, &info);
 	if(strcmp(path, "/") != 0 && (res || !info.directory)) return NULL;
 
-	// TODO Trzeba zwolnić łańcuch
-	uint16_t first_cluster = res ? 0 : info.clusters_chain[0];
+	uint16_t first_cluster = res ? 0 : info.first_cluster;
 
 	// Zaalokowanie uchwytu do katalogu
 	DIR *dir = (DIR *)malloc(sizeof(DIR));
 	if(dir == NULL) return NULL;
 
 	// Inicjowanie uchwytu do katalogu
+	dir->start = first_cluster;
 	dir->pos = 0;
-	dir->entries_count = fat_get_visible_entries_count(first_cluster);
-	dir->entries = (DENTRY *)malloc(sizeof(DENTRY) * dir->entries_count);
-	if(dir->entries == NULL)
-	{
-		free(dir);
-		return NULL;
-	}
 
-	// Uzupełnianie tablicy wpisów
-	uint32_t entries_count = fat_get_entries_count(first_cluster);
-	DENTRY *sys_entry = dir->entries;
-	for(uint32_t i=0; i<entries_count; i++)
-	{
-	    // Pobranie wpisu z katalogu
-		struct fat_directory_entry_t fat_entry;
-		int res = fat_get_entry_POS(first_cluster, i, &fat_entry);
-		if(res)
-        {
-		    free(dir->entries);
-		    free(dir);
-		    return NULL;
-        }
-
-		// Używkotnik nie zobaczy wpisów woluminowych ani systemowych
-		if(!fat_is_entry_visible(&fat_entry)) continue;
-
-		// Znalezienie długiej nazwy pliku lub użycie krótkiej jeśli długa nie istnieje
-        res = fat_get_long_filename(first_cluster, i, (char*)sys_entry->filename);
-        if(res) fat_join_filename((char*)fat_entry.name, (char*)fat_entry.ext, (char*)sys_entry->filename);
-		sys_entry++;
-	}
-
-	// Zwrócenie uchwytu do katalogu
 	return dir;
 }
 
 // Funkcja zamykająca katalog do odczytu
 void closedir(DIR *dir)
 {
-	free(dir->entries);
 	free(dir);
 }
 
 // Funkcja odczytująca kolejny wpis z katalogu
-DENTRY *readdir(DIR *dir)
+int readdir(DIR *dir, DENTRY *entry)
 {
-	if(dir->pos >= dir->entries_count)
-		return NULL;
-		
-	dir->pos++;
-	
-	DENTRY *entry = dir->entries + dir->pos - 1;
-	return entry;
+    if(dir == NULL) return 1;
+
+    while(1)
+    {
+        struct fat_directory_entry_t fat_entry;
+        int res = fat_get_entry_by_pos(dir->start, dir->pos, &fat_entry);
+        if(res) return 1;
+
+        if(fat_entry.name[0] == 0) return 1;
+
+        if(fat_is_entry_visible(&fat_entry))
+        {
+            int res = fat_get_long_filename(dir->start, dir->pos, entry->filename);
+            if(res) fat_join_filename(fat_entry.name, fat_entry.ext, entry->filename);
+            dir->pos++;
+            return 0;
+        }
+
+        dir->pos++;
+    }
 }
 
 // Funkcja pobierająca metainformacje o pliku
@@ -97,7 +63,7 @@ int stat(const char *path, STAT *stat)
 	if(path == NULL || stat == NULL) return 1;
 
     FENTRY fat_entry;
-	int res = fat_get_entry(path, &fat_entry);
+	int res = fat_get_entry_by_path(path, &fat_entry);
 	if(res != 0) return 1;
 	
 	stat->directory = fat_entry.attr & FAT_ATTR_SUBDIRECTORY;
@@ -114,17 +80,8 @@ int stat(const char *path, STAT *stat)
 	
 	stat->size = fat_entry.file_size;
 	
-	stat->clusters_count = fat_get_chain_length(fat_entry.file_start, NULL);
-    stat->clusters_chain = (uint16_t *)malloc(sizeof(uint16_t) * (stat->clusters_count + 1));
-    if(stat->clusters_chain == NULL) return 1;
-
-    uint16_t current_cluster = fat_entry.file_start;
-    for(int i=0; i<stat->clusters_count; i++)
-    {
-        stat->clusters_chain[i] = current_cluster;
-        current_cluster = fat_get_next_cluster(current_cluster, NULL);
-    }
-    stat->clusters_chain[stat->clusters_count] = 0;
+	stat->clusters_count = fat_get_chain_length(fat_entry.file_start);
+    stat->first_cluster = fat_entry.file_start;
 	
 	return 0;
 }
@@ -137,50 +94,50 @@ MYFILE *open(const char *path, const char *mode)
 	int res = stat(path, &info);
 	if(res || info.directory) return NULL;
 
-	// Potrzebujemy tylko pierwszego klastra - zapamiętujemy go a reszte zwalniamy
-	uint16_t first_cluster = info.clusters_chain[0];
-	free(info.clusters_chain);
-
-	// Jeżeli plik jest już otwarty to przerwij
-	if(file_list_contains(files, first_cluster))
-		return NULL;
-
 	// Tworzenie uchwytu do pliku
-	MYFILE file;
-	file.start_cluster = first_cluster;
-	file.pos = 0;
-	file.size = info.size;
-    file.write = strchr(mode, 'w') != NULL;
-    file.read = strchr(mode, 'r') != NULL;
+	MYFILE *file = (MYFILE *)malloc(sizeof(MYFILE));
+	if(file == NULL) return NULL;
 
-	// Dodanie pliku do listy otwartych
-	MYFILE *file_on_list = file_list_push_back(files, &file);
+	file->path = strdup(path);
+	if(file->path == NULL) return NULL;
+	file->pos = 0;
 
 	// Zwrócenie uchwytu do pliku
-	return file_on_list;
+	return file;
 }
 
 // Funkcja zamykająca plik
 void close(MYFILE *file)
 {
-    // Usunięcie pliku z listy otwartych
-	file_list_remove(files, file);
+    free(file->path);
 }
 
 // Czytanie danych z pliku
 int read(void *buffer, uint32_t size, MYFILE *file)
 {
+    if(buffer==NULL || file==NULL) return 0;
+
+    struct fat_directory_entry_t entry;
+    int res = fat_get_entry_by_path(file->path, &entry);
+    if(res) return 0;
+
     // Przerwanie jeśli odczytaliśmy cały plik
-    if(file->pos >= file->size) return MY_EOF;
+    if(file->pos >= entry.file_size) return MY_EOF;
 
     // Zmienjszenie liczby bajtów do odczytania jeśli byśmy wyszli poza plik
-    uint32_t bytes_to_end = file->size - file->pos;
+    uint32_t bytes_to_end = entry.file_size - file->pos;
     if(size > bytes_to_end) size = bytes_to_end;
 
     // Odczytanie danych i zwiększenie wskaźnika
-    int read_count = fat_read_file(buffer, file->start_cluster, file->pos, size);
+    int read_count = fat_read_file(buffer, entry.file_start, file->pos, size);
     file->pos += read_count;
 
     // Zwrócenie liczby odczytanych bajtów
 	return read_count;
+}
+
+uint16_t get_next_cluster(uint16_t cluster)
+{
+    int err = 0;
+    return fat_get_next_cluster(cluster);
 }

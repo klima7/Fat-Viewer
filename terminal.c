@@ -72,12 +72,13 @@ static void terminal_command_dir(int argc, char *argv)
     }
 
 	// Wczytywanie z folderu wszystkich wpisów
-	DENTRY* entry = readdir(dir);
-	while(entry != NULL)
+	DENTRY entry;
+	int entry_res = readdir(dir, &entry);
+	while(entry_res == 0)
 	{
 	    // Utworzenie pełnej ścieżki do pliku
 		char compound[MAX_PATH_LEN];
-		if(terminal_join_path(pwd, entry->filename, compound) == NULL) continue;
+		if(terminal_join_path(pwd, entry.filename, compound) == NULL) continue;
 
 		// Pobranie metainformacji
 		STAT info;
@@ -88,12 +89,11 @@ static void terminal_command_dir(int argc, char *argv)
 			printf("    ");
 			if(info.directory) printf("%10s", "<DIR>");
 			else printf("%10d", info.size);
-			printf("   %s\n", entry->filename);
-            free(info.clusters_chain);
+			printf("   %s\n", entry.filename);
 		}
 
 		// Pobranie kolejnego wpisu z folderu
-		entry = readdir(dir);
+		entry_res = readdir(dir, &entry);
 	}
 
 	// Zamykanie katalogu
@@ -199,15 +199,16 @@ static void terminal_command_fileinfo(int argc, char *argv)
 
 	// Wyświetlenie pierwszego klastra
 	if(info.clusters_count > 0)
-        printf("[%hu] ", info.clusters_chain[0]);
+        printf("[%hu] ", info.first_cluster);
 
 	// Wyświetlenie reszty klastrów
+	uint16_t cluster = info.first_cluster;
     for(uint32_t i=1; i<info.clusters_count; i++)
-        printf("%hu ", info.clusters_chain[i]);
+    {
+        cluster = get_next_cluster(cluster);
+        printf("%hu ", cluster);
+    }
     printf("\n");
-
-    // Zwolnienie łańcucha klastrów
-    free(info.clusters_chain);
 }
 
 // Komenda "cat"
@@ -239,7 +240,6 @@ static void terminal_command_cat(int argc, char *argv)
         printf("Invalid filename\n");
         return;
     }
-    free(info.clusters_chain);
 
     // Sprawdzenie czy plik nie jest katalogiem
     if(info.directory)
@@ -273,8 +273,10 @@ static void terminal_command_cat(int argc, char *argv)
         {
             buffer[read_res] = 0;
             printf("%s", buffer);
+            if(strchr(buffer, 0)) break;
         }
     } while(read_res != MY_EOF);
+    printf("\n");
 
     // Zamknięcie pliku
     close(f);
@@ -349,7 +351,6 @@ static void terminal_command_get(int argc, char *argv)
         printf("Invalid filename\n");
         return;
     }
-    free(info.clusters_chain);
 
     // Sprawdzenie czy plik nie jest katalogiem
     if(info.directory)
@@ -401,7 +402,7 @@ static void terminal_command_get(int argc, char *argv)
     fclose(f2);
 }
 
-// Komenda "cat"
+// Komenda "zip"
 static void terminal_command_zip(int argc, char *argv)
 {
     // Sprawdzenie liczby argumentów
@@ -439,7 +440,6 @@ static void terminal_command_zip(int argc, char *argv)
         printf("Invalid first filename: %s\n", name1);
         return;
     }
-    free(info1.clusters_chain);
 
     STAT info2;
     int res2 = stat(full2, &info2);
@@ -448,7 +448,6 @@ static void terminal_command_zip(int argc, char *argv)
         printf("Invalid second filename: %s\n", name2);
         return;
     }
-    free(info2.clusters_chain);
 
     // Sprawdzenie czy pliki nie są katalogami
     if(info1.directory)
@@ -541,31 +540,6 @@ static void terminal_command_zip(int argc, char *argv)
     fclose(f3);
 }
 
-// Komenda "rename"
-static void terminal_command_rename(int argc, char *argv)
-{
-    // Sprawdzenie liczby argumentów
-    if (argc < 3) {
-        printf("Correct use: raname [old name] [new name]\n");
-        return;
-    }
-
-    // Znalezienie argumentów
-    char *old_name = terminal_get_token(argv, 1);
-    char *new_name = terminal_get_token(argv, 2);
-
-    // Stworzenie pełnych ścieżek
-    char full[MAX_PATH_LEN];
-    if (terminal_join_path(pwd, old_name, full) == NULL) {
-        printf("Path too long\n");
-        return;
-    }
-
-    // TODO
-
-    printf("Renamed\n");
-}
-
 // Funkcja pobierająca od użytkownika komendę
 static void terminal_read_command(char *command)
 {
@@ -617,7 +591,6 @@ static int terminal_execute_command(char *command)
 	else if(strcmp(command, "rootinfo") == 0) terminal_command_rootinfo(argc, command);
 	else if(strcmp(command, "get") == 0) terminal_command_get(argc, command);
 	else if(strcmp(command, "zip") == 0) terminal_command_zip(argc, command);
-	else if(strcmp(command, "rename") == 0) terminal_command_rename(argc, command);
 	else if(strcmp(command, "exit") == 0) return 1;
 	else printf("Invalid command\n");
 	
