@@ -31,7 +31,7 @@ int main(int argc, char **argv)
 	// Uruchomienie systemu
 	system_init();
 
-	char *napis = "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
+	char *napis = "Ladaa to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
                   "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
                   "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
                   "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
@@ -51,10 +51,18 @@ int main(int argc, char **argv)
                   "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, "
                   "Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, Ladna to bajeczka niedluga, \n";
 
-	int res = fat_write_file(napis, 5, 0, strlen(napis)+1);
-	printf("Write res: %d\n", res);
+	/*
+    MYFILE *file = open("/plik2", "w");
+    if(file == NULL) printf("Error\n");
 
+    int count = write(napis, strlen(napis)+1, file);
+    printf("[Count: %d]\n", count);
+
+    close(file);
+    */
 	// Uruchomienie terminala
+	int res = fat_truncate("/plik1", 9000);
+	printf("%d\n", res);
 	terminal_run();
 
 	return 0;

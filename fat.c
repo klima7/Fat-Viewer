@@ -29,6 +29,7 @@ int fat_init(void)
 	// Obliczenie częstu używanych adresów
 	root_dir_addr = (bs.bpb.reserved_sectors + bs.bpb.sectors_per_table * bs.bpb.tables_count) * SECTOR_SIZE;
 	alloc_area_addr = root_dir_addr + bs.bpb.entries_in_root_directory * FAT_ENTRY_SIZE;
+	printf("%u\n", alloc_area_addr);
 
 	// Odczyt wartości snosowanej jako oznaczenie łańcucha klastrów
 	int err = 0;
@@ -122,7 +123,7 @@ static uint16_t fat_find_free_cluster(int *err)
 }
 
 // Funkcja dodaje do łańcucha nowe klastry, zwraca liczbę klastrów którą udało się dodać
-uint32_t fat_add_cluster(uint16_t chain, uint32_t count)
+static uint32_t fat_add_cluster(uint16_t chain, uint32_t count)
 {
     // Znalezienie ostatniego klastra w łańcuchu
     uint16_t cluster = chain;
@@ -154,6 +155,74 @@ uint32_t fat_add_cluster(uint16_t chain, uint32_t count)
 
         cluster = new_cluster;
     }
+}
+
+// Usówa count klastrów z łańcucha klastrów rozpoczynającego się w klastrze chain_start
+static int fat_remove_cluster(uint16_t chain_start, int count)
+{
+    // Sprawdzenie czy długość łańcucha nie jest zbyt mała
+    int err = 0;
+    uint32_t len = fat_get_chain_length(chain_start, &err);
+    if(err || count > len) return 1;
+
+    // Przeskoczenie klastrów których nie usówamy
+    uint16_t cluster = chain_start;
+    for(uint32_t i=0; i<len-count; i++)
+    {
+        cluster = fat_read_table(0, cluster, &err);
+        if(err) return 1;
+    }
+
+    // Usówanie kolejnych klastrów
+    for(uint32_t i=0; i<count; i++)
+    {
+        uint16_t next = fat_read_table(0, cluster, &err);
+        if(err) return 1;
+
+        if(i==0 && cluster!=chain_start) err = fat_write_tables(cluster, end_of_chain_marker);
+        else err = fat_write_tables(cluster, FAT_CLUSTER_FREE);
+        if(err) return 1;
+
+        cluster = next;
+    }
+    return 0;
+}
+
+// zmienia rozmiar pliku wskazywanego przez path an new_size
+int fat_truncate(char *path, uint32_t new_size)
+{
+    // Odczytanie wpisu by poznać pierwszy klaster
+    struct fat_directory_entry_t entry;
+    int res = fat_get_entry(path, &entry);
+    if(res) return 0;
+
+    // Obliczenie długości łańcucha klastrów
+    int err = 0;
+    uint32_t chain_len = fat_get_chain_length(entry.file_start, &err);
+    if(err) return 1;
+
+    // Obliczenie żądanej długośći łańcucha klastrów
+    uint32_t required_len = new_size / FAT_CLUSTER_SIZE;
+    if(new_size % FAT_CLUSTER_SIZE != 0) required_len++;
+
+    // Usunięcie lub dodanie klastrów
+    if(required_len > chain_len)
+    {
+        if(chain_len == 0)
+        {
+
+        }
+        fat_add_cluster(entry.file_start, required_len-chain_len);
+    }
+    else if(required_len < chain_len) fat_remove_cluster(entry.file_start, chain_len-required_len);
+
+    // Zmiana wpisu
+    if(new_size == 0) entry.file_start = FAT_CLUSTER_FREE;
+    entry.file_size = new_size;
+    res = fat_write_entry(path, &entry);
+    if(res) return 0;
+
+    return 0;
 }
 
 // funkcja zwraca numer następnego klastra lub 0 jeśli kolejny klaster nie istnieje
@@ -198,7 +267,7 @@ uint32_t fat_get_chain_length(uint16_t start, int *err)
 }
 
 // Funkcja znajdująca wpis w katalogu rozpoczynającym się w klastrze dir_start odpowiadający za plik o nazwie name
-int fat_get_entry_simple(uint16_t dir_start, const char *name, struct fat_directory_entry_t *res_entry)
+int fat_get_entry_simple(uint16_t dir_start, const char *name, struct fat_directory_entry_t *res_entry, uint32_t *dir_pos)
 {
     // Znalezienie liczby wpisów w katalogu
     uint32_t entries_count = fat_get_entries_count(dir_start);
@@ -220,6 +289,7 @@ int fat_get_entry_simple(uint16_t dir_start, const char *name, struct fat_direct
         if(strcmp(name, filename) == 0)
         {
             *res_entry = entry;
+            if(dir_pos != NULL) *dir_pos = i;
             return 0;
         }
     }
@@ -230,12 +300,10 @@ int fat_get_entry_simple(uint16_t dir_start, const char *name, struct fat_direct
 // Funkcja zwracająca wpis w katalogu odpowiadający za plik wskazywany przez ścieżkę path
 int fat_get_entry(const char *path, struct fat_directory_entry_t *res_entry)
 {
-    // Sprawdzenie poprawności argumentów
-    if(path == NULL || res_entry == NULL) return 1;
-
     // Rozpoczęcie dzielenia ścieżki na tokeny
     char *tokens = strdup(path);
     char *token = strtok(tokens, "/");
+    if(token == NULL) return 1;
 
     // Rozpoczęcie poszukiwanie od katalogu głównego
     uint16_t current_dir = 0;
@@ -250,7 +318,7 @@ int fat_get_entry(const char *path, struct fat_directory_entry_t *res_entry)
         if(!is_directory) { free(tokens); return 1; }
 
         // Znalezienie wpisu w aktualnym katalogu
-        int res = fat_get_entry_simple(current_dir, token, &entry);
+        int res = fat_get_entry_simple(current_dir, token, &entry, NULL);
         if(res != 0) { free(tokens); return 1; }
 
         // Znalezienie numeru startowego kolejnego katalogu/pliku i określenie czy jest katalogiem
@@ -316,7 +384,7 @@ int fat_get_entry_POS(uint16_t dir_start, uint32_t dir_pos, struct fat_directory
 }
 
 // Funkcja zapisuje wpis w katalogu rozpoczynającym się w klastrze dir_start na pozycji dir_pos
-int fat_write_entry_POS(uint16_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *src_entry)
+static int fat_write_entry_POS(uint16_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *src_entry)
 {
     // Przeszukiwanym katalogiem jest katalog główny
     if(dir_start == 0)
@@ -374,11 +442,8 @@ int fat_write_entry_POS(uint16_t dir_start, uint32_t dir_pos, struct fat_directo
 }
 
 // Funkcja zmienia wpis w katalogu odpowiadający za plik wskazywany przez ścieżkę path
-int fat_write_entry(const char *path, struct fat_directory_entry_t *res_entry)
+int fat_write_entry(const char *path, struct fat_directory_entry_t *src_entry)
 {
-    // Sprawdzenie poprawności argumentów
-    if(path == NULL || res_entry == NULL) return 1;
-
     // Rozpoczęcie dzielenia ścieżki na tokeny
     char *tokens = strdup(path);
     char *token = strtok(tokens, "/");
@@ -386,6 +451,9 @@ int fat_write_entry(const char *path, struct fat_directory_entry_t *res_entry)
     // Rozpoczęcie poszukiwanie od katalogu głównego
     uint16_t current_dir = 0;
     bool is_directory = true;
+
+    uint16_t last_dir = 0;
+    uint32_t last_pos = 0;
 
     struct fat_directory_entry_t entry;
 
@@ -396,20 +464,21 @@ int fat_write_entry(const char *path, struct fat_directory_entry_t *res_entry)
         if(!is_directory) { free(tokens); return 1; }
 
         // Znalezienie wpisu w aktualnym katalogu
-        int res = fat_get_entry_simple(current_dir, token, &entry);
+        int res = fat_get_entry_simple(current_dir, token, &entry, &last_pos);
         if(res != 0) { free(tokens); return 1; }
 
         // Znalezienie numeru startowego kolejnego katalogu/pliku i określenie czy jest katalogiem
+        last_dir = current_dir;
         current_dir = entry.file_start;
         is_directory = entry.attr & FAT_ATTR_SUBDIRECTORY;
 
         // Znalezienie kolejnego tokena
         token = strtok(NULL, "/");
     }
-
-    *res_entry = entry;
     free(tokens);
-    return 0;
+
+    // Zmiana odpowiedniego wpisu
+    return fat_write_entry_POS(last_dir, last_pos, src_entry);
 }
 
 // Funkcja zwraca długą nazwę dla krótkiego wpisu znajdującego się na danej pozycji
@@ -581,10 +650,15 @@ uint32_t fat_read_file(void *buffer, uint32_t start_cluster, uint32_t offset, ui
 }
 
 // Zapisuje dane do pliku
-uint32_t fat_write_file(void *buffer, uint32_t start_cluster, uint32_t offset, uint32_t size)
+uint32_t fat_write_file(void *buffer, char *path, uint32_t offset, uint32_t size)
 {
+    // Odczytanie wpisu by poznać pierwszy klaster
+    struct fat_directory_entry_t entry;
+    int res = fat_get_entry(path, &entry);
+    if(res) return 0;
+
     // Znalezienie pierwszego klastra do zapisu
-    uint32_t current_cluster = start_cluster;
+    uint32_t current_cluster = entry.file_start;
     while(offset >= FAT_CLUSTER_SIZE)
     {
         int err = 0;
@@ -599,7 +673,7 @@ uint32_t fat_write_file(void *buffer, uint32_t start_cluster, uint32_t offset, u
 
     // Aktualnie zapisywany klaster
     uint8_t cluster[FAT_CLUSTER_SIZE];
-    int res = disc_readblock(cluster, FAT_GET_DATA_ADDR(current_cluster)/SECTOR_SIZE, FAT_CLUSTER_SIZE/SECTOR_SIZE);
+    res = disc_readblock(cluster, FAT_GET_DATA_ADDR(current_cluster)/SECTOR_SIZE, FAT_CLUSTER_SIZE/SECTOR_SIZE);
     if(res != FAT_CLUSTER_SIZE/SECTOR_SIZE) return 0;
 
     // Zapisanie żądanej liczby bajtów

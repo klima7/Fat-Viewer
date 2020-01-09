@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include "file_list.h"
 
 FLIST *file_list_create(void)
@@ -55,12 +56,12 @@ void file_list_remove(FLIST* list, MYFILE *file)
 	free(to_remove);
 }
 
-bool file_list_contains(FLIST *list, uint32_t addr)
+bool file_list_contains(FLIST *list, const char *path)
 {
 	FNODE *current = list->head;
 	while(current != NULL)
 	{
-		if(current->data.start_cluster == addr)
+		if(strcmp(current->data.path, path) == 0)
 			return true;
 			
 		current = current->next;

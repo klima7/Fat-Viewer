@@ -44,10 +44,8 @@ struct stat_t
 // Uchwyt do pliku
 struct file_t
 {
-	uint16_t start_cluster;
-    uint32_t size;
+    char *path;
 	uint32_t pos;
-	bool read;
 	bool write;
 };
 
@@ -65,5 +63,6 @@ int stat(const char *path, STAT *stat);
 MYFILE *open(const char *path, const char *mode);
 void close(MYFILE *file);
 int read(void *buffer, uint32_t size, MYFILE *file);
+int write(void *buffer, uint32_t size, MYFILE *file);
 
 #endif

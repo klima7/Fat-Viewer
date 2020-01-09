@@ -273,8 +273,10 @@ static void terminal_command_cat(int argc, char *argv)
         {
             buffer[read_res] = 0;
             printf("%s", buffer);
+            if(strchr(buffer, 0)) break;
         }
     } while(read_res != MY_EOF);
+    printf("\n");
 
     // Zamknięcie pliku
     close(f);
@@ -401,7 +403,7 @@ static void terminal_command_get(int argc, char *argv)
     fclose(f2);
 }
 
-// Komenda "cat"
+// Komenda "zip"
 static void terminal_command_zip(int argc, char *argv)
 {
     // Sprawdzenie liczby argumentów
@@ -541,6 +543,42 @@ static void terminal_command_zip(int argc, char *argv)
     fclose(f3);
 }
 
+// Komenda "write"
+static void terminal_command_write(int argc, char *argv)
+{
+    // Sprawdzenie liczby argumentów
+    if (argc < 3) {
+        printf("Correct use: write [filename] [text]\n");
+        return;
+    }
+
+    // Znalezienie argumentów
+    char *filename = terminal_get_token(argv, 1);
+    char *text = terminal_get_token(argv, 2);
+
+    // Stworzenie pełnej ścieżki
+    char full_path[MAX_PATH_LEN];
+    if (terminal_join_path(pwd, filename, full_path) == NULL) {
+        printf("Path too long\n");
+        return;
+    }
+
+    // Otwarcie pliku
+    MYFILE *file = open(full_path, "w");
+    if(file == NULL)
+    {
+        printf("Unable to open file\n");
+        return;
+    }
+
+    // Zapisanie danych do pliku
+    int res = write(text, strlen(text)+1, file);
+    printf("%d bytes wrote successfully\n", res);
+
+    // Zamknięcie pliku
+    close(file);
+}
+
 // Komenda "rename"
 static void terminal_command_rename(int argc, char *argv)
 {
@@ -618,6 +656,7 @@ static int terminal_execute_command(char *command)
 	else if(strcmp(command, "get") == 0) terminal_command_get(argc, command);
 	else if(strcmp(command, "zip") == 0) terminal_command_zip(argc, command);
 	else if(strcmp(command, "rename") == 0) terminal_command_rename(argc, command);
+	else if(strcmp(command, "write") == 0) terminal_command_write(argc, command);
 	else if(strcmp(command, "exit") == 0) return 1;
 	else printf("Invalid command\n");
 	

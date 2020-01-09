@@ -114,15 +114,16 @@ struct tm fat_convert_time(uint16_t date, uint16_t time);
 char *fat_join_filename(const char *name, const char *ext, char *result);
 
 uint32_t fat_read_file(void *buffer, uint32_t start_cluster, uint32_t offset, uint32_t size);
-uint32_t fat_write_file(void *buffer, uint32_t start_cluster, uint32_t offset, uint32_t size);
+uint32_t fat_write_file(void *buffer, char *path, uint32_t offset, uint32_t size);
 
 int fat_get_entry(const char *path, struct fat_directory_entry_t *entry);
 int fat_get_entry_POS(uint16_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry);
+int fat_write_entry(const char *path, struct fat_directory_entry_t *src_entry);
 void fat_get_cluster_summary(uint32_t *free, uint32_t *use, uint32_t *bad, uint32_t *end);
 int fat_get_root_summary(uint32_t *free, uint32_t *used);
 void fat_get_boot_sector(struct fat_boot_sector_t *boot_sector);
 int fat_get_long_filename(uint16_t dir_start, uint32_t dir_pos, char *long_filename);
 
-uint32_t fat_add_cluster(uint16_t chain, uint32_t count);
+int fat_truncate(char *path, uint32_t new_size);
 
 #endif

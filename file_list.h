@@ -23,6 +23,6 @@ FLIST *file_list_create(void);
 void file_list_destroy(FLIST* list);
 MYFILE *file_list_push_back(FLIST *list, MYFILE *file);
 void file_list_remove(FLIST* list, MYFILE *file);
-bool file_list_contains(FLIST *list, uint32_t addr);
+bool file_list_contains(FLIST *list, const char *path);
 
 #endif

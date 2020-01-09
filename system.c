@@ -142,16 +142,15 @@ MYFILE *open(const char *path, const char *mode)
 	free(info.clusters_chain);
 
 	// Jeżeli plik jest już otwarty to przerwij
-	if(file_list_contains(files, first_cluster))
+	if(file_list_contains(files, path))
 		return NULL;
 
 	// Tworzenie uchwytu do pliku
 	MYFILE file;
-	file.start_cluster = first_cluster;
+	file.path = strdup(path);
+	if(file.path == NULL) return NULL;
 	file.pos = 0;
-	file.size = info.size;
     file.write = strchr(mode, 'w') != NULL;
-    file.read = strchr(mode, 'r') != NULL;
 
 	// Dodanie pliku do listy otwartych
 	MYFILE *file_on_list = file_list_push_back(files, &file);
@@ -163,6 +162,7 @@ MYFILE *open(const char *path, const char *mode)
 // Funkcja zamykająca plik
 void close(MYFILE *file)
 {
+    free(file->path);
     // Usunięcie pliku z listy otwartych
 	file_list_remove(files, file);
 }
@@ -170,17 +170,36 @@ void close(MYFILE *file)
 // Czytanie danych z pliku
 int read(void *buffer, uint32_t size, MYFILE *file)
 {
+    if(buffer==NULL || file==NULL) return 0;
+
+    struct fat_directory_entry_t entry;
+    int res = fat_get_entry(file->path, &entry);
+    if(res) return 0;
+
     // Przerwanie jeśli odczytaliśmy cały plik
-    if(file->pos >= file->size) return MY_EOF;
+    if(file->pos >= entry.file_size) return MY_EOF;
 
     // Zmienjszenie liczby bajtów do odczytania jeśli byśmy wyszli poza plik
-    uint32_t bytes_to_end = file->size - file->pos;
+    uint32_t bytes_to_end = entry.file_size - file->pos;
     if(size > bytes_to_end) size = bytes_to_end;
 
     // Odczytanie danych i zwiększenie wskaźnika
-    int read_count = fat_read_file(buffer, file->start_cluster, file->pos, size);
+    int read_count = fat_read_file(buffer, entry.file_start, file->pos, size);
     file->pos += read_count;
 
     // Zwrócenie liczby odczytanych bajtów
 	return read_count;
+}
+
+// Zapis do pliku
+int write(void *buffer, uint32_t size, MYFILE *file)
+{
+    if(buffer==NULL || file==NULL || !file->write) return 0;
+
+    // Zapis danych do pliku
+    int write_count = fat_write_file(buffer, file->path, file->pos, size);
+    file->pos += write_count;
+
+    // Zwrócenie liczby zapisanych bajtów
+    return write_count;
 }
