@@ -104,7 +104,7 @@ struct fat_long_name_directory_entry_t
 
 typedef struct fat_directory_entry_t FENTRY;
 
-int fat_init(void);
+int fat16_mount(void);
 uint32_t fat_get_chain_length(uint16_t start);
 uint32_t fat_get_entries_count(uint16_t dir_start);
 bool fat_is_entry_visible(struct fat_directory_entry_t *entry);

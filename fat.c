@@ -1,9 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <math.h>
 #include <time.h>
-#include <ctype.h>
-#include <wchar.h>
 #include "disc.h"
 #include "fat.h"
 #include "utils.h"
@@ -16,14 +15,20 @@ static uint32_t alloc_area_addr;            // Adres obszaru z klastrami
 static uint32_t fat_entries_count;          // Liczba wpisów w każdej tablicy fat
 
 // Inicjowanie
-int fat_init(void)
+int fat16_mount(void)
 {
     // Odczytanie bootsectora
 	int read_res = disc_readblock(&bs, 0, 1);
 	if(read_res != 1) return 1;
 
-	// Sprawdzenie poprawności sekwencji kończącej
+	// Sprawdzenie poprawności bootsectora
 	if(bs.boot_sector_end != FAT_END_SEQUENCE) return 1;
+    if(!is_power_of_two(bs.bpb.bytes_per_sector)) return 1;
+    if(!is_power_of_two(bs.bpb.sectors_per_cluster) || bs.bpb.sectors_per_cluster>128) return 1;
+    if(bs.bpb.reserved_sectors<1) return 1;
+    if(bs.bpb.tables_count != 1 && bs.bpb.tables_count != 2) return 1;
+    if(bs.bpb.entries_in_root_directory == 0 || (bs.bpb.entries_in_root_directory*FAT_ENTRY_SIZE)%bs.bpb.bytes_per_sector!=0) return 1;
+    if(bs.bpb.all_sectors_1 == 0) return 1;
 
 	// Obliczenie często używanych wartości
 	root_dir_addr = (bs.bpb.reserved_sectors + bs.bpb.sectors_per_table * bs.bpb.tables_count) * bs.bpb.bytes_per_sector;
@@ -397,7 +402,7 @@ int fat_get_root_summary(uint32_t *free, uint32_t *used)
     *used = 0;
 
     // Pobieranie kolejnych wpisów
-    for(int i=0; i<fat_entries_count; i++)
+    for(int i=0; i<bs.bpb.entries_in_root_directory; i++)
     {
         struct fat_directory_entry_t entry;
         int res = fat_get_entry_by_pos(0, i, &entry);
@@ -407,7 +412,7 @@ int fat_get_root_summary(uint32_t *free, uint32_t *used)
         if(entry.name[0] == FAT_ENTRY_FREE || entry.name[0] == FAT_ENTRY_DEL1 || entry.name[0] == FAT_ENTRY_DEL2) (*free)++;
     }
 
-    *used = fat_entries_count - *free;
+    *used = bs.bpb.entries_in_root_directory - *free;
     return 0;
 }
 

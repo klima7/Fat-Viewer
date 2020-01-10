@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <wchar.h>
 #include <locale.h>
 #include <string.h>
 #include "disc.h"
@@ -27,8 +26,12 @@ int main(int argc, char **argv)
 
 	// Start
 	disc_set(disc);
-    int res = fat_init();
-    if(res != 0) return 0;
+    int res = fat16_mount();
+    if(res != 0)
+    {
+        printf("Unable to mount as FAT16\n");
+        return 0;
+    }
 	terminal_run();
 
 	return 0;

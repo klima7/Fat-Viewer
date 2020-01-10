@@ -16,5 +16,6 @@
 char cvt_to_hex_digit(uint8_t val);
 void display_hex_line(void *start, int len);
 void display_ascii_line(void *start, int len);
+int is_power_of_two(uint64_t val);
 
 #endif

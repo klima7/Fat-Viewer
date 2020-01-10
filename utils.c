@@ -37,3 +37,15 @@ void display_ascii_line(void *start, int len)
 	}
 }
 
+int is_power_of_two(uint64_t val)
+{
+    while(val > 2)
+    {
+        uint64_t a = val / 2;
+        uint64_t b = val % 2;
+        if(b) return 0;
+        val = a;
+    }
+    if(val==2) return 1;
+    return 0;
+}
