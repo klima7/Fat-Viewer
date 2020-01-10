@@ -39,6 +39,8 @@ void display_ascii_line(void *start, int len)
 
 int is_power_of_two(uint64_t val)
 {
+    if(val == 1) return 1;
+
     while(val > 2)
     {
         uint64_t a = val / 2;

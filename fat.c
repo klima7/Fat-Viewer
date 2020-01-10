@@ -1,22 +1,24 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include <math.h>
 #include <time.h>
 #include "disc.h"
 #include "fat.h"
 #include "utils.h"
 
+int fat_version;                            // Wykorzystywana wersja FAT
 struct fat_boot_sector_t bs;                // Dane z boot sectora
-uint16_t *fat_table;                        // Tablica FAT
+uint32_t *fat_table;                        // Tablica FAT
 
 static uint32_t root_dir_addr;              // Adres katalogu głównego
 static uint32_t alloc_area_addr;            // Adres obszaru z klastrami
 static uint32_t fat_entries_count;          // Liczba wpisów w każdej tablicy fat
 
 // Inicjowanie
-int fat16_mount(void)
+int fat_mount(int version)
 {
+    fat_version = version;
+
     // Odczytanie bootsectora
 	int read_res = disc_readblock(&bs, 0, 1);
 	if(read_res != 1) return 1;
@@ -36,12 +38,15 @@ int fat16_mount(void)
     fat_entries_count = bs.bpb.sectors_per_table * bs.bpb.bytes_per_sector / 2;
 
 	// Odczyt tablic fat
-    uint16_t fat[bs.bpb.tables_count][fat_entries_count];
+	uint32_t fat_size = 0;
+	if(version == FAT_16) fat_size = fat_entries_count*2;
+	else if(version == FAT_12) fat_size = fat_entries_count+fat_entries_count/2;
+
+    uint8_t fat[bs.bpb.tables_count][fat_size];
 
 	for(uint8_t i=0; i<bs.bpb.tables_count; i++)
     {
         uint32_t fat_start = (bs.bpb.reserved_sectors + bs.bpb.sectors_per_table * i) * bs.bpb.bytes_per_sector;
-        uint32_t fat_size = fat_entries_count*2;
 
         // Obliczenie na których sektorach dyskowych znajduje się tablica fat
         uint32_t fat_start_disc_sector_number = fat_start / DISC_SECTOR_SIZE;
@@ -60,16 +65,36 @@ int fat16_mount(void)
 	// Porównanie zawartości tablic fat
 	if(bs.bpb.tables_count == 2)
 	{
-        for (uint32_t i = 0; i < fat_entries_count; i++)
+        for (uint32_t i = 0; i < fat_size; i++)
         {
             if (fat[0][i] != fat[1][i]) return 1;
         }
     }
 
     // Zachowanie pierwszej tablicy fat
-    fat_table = (uint16_t *)malloc(fat_entries_count*2);
+    fat_table = (uint32_t *)malloc(fat_entries_count*4);
 	if(fat_table == NULL) return 1;
-    memcpy(fat_table, &fat[0][0], fat_entries_count*2);
+
+    if(version == FAT_16)
+    {
+        for(int i=0; i<fat_entries_count; i++)
+        {
+            fat_table[i] = ((uint16_t *) fat[0])[i];
+        }
+    }
+    if(version == FAT_12)
+    {
+        for(int i=0; i<fat_entries_count; i++)
+        {
+            uint32_t group_addr = i/2*3;
+            uint8_t three[3] = { fat[0][group_addr+0], fat[0][group_addr+1], fat[0][group_addr+2]};
+            if(i%2==0)
+                fat_table[i] = three[0] | (three[1] & 0x0F) << 8;
+            else
+                fat_table[i] = (three[1] & 0xF0) | three[2] << 8;
+            printf("%d\n", fat_table[i]);
+        }
+    }
 
     // Wyświetlenie danych z bootsectora
     printf("---------------Disc Info---------------\n");
@@ -79,6 +104,26 @@ int fat16_mount(void)
 	return 0;
 }
 
+// Czy klaster jest kończący
+int fat_is_end_cluster(uint32_t value)
+{
+    if(fat_version == FAT_16) return (value == 0xFFF8 || value == 0);
+    else if(fat_version == FAT_12) return (value >= 0xFF8 || value == 0);
+}
+
+// Czy klaster jest wolny
+int fat_is_free_cluster(uint32_t value)
+{
+    return value == 0;
+}
+
+// Czy klaster jest nieprawidłowy
+int fat_is_bad_cluster(uint32_t value)
+{
+    if(fat_version == FAT_16) return value == 0xFFF5;
+    else if(fat_version == FAT_12) return value == 0xFF5;
+}
+
 // funkcja zwraca numer następnego klastra lub 0 jeśli kolejny klaster nie istnieje
 uint16_t fat_get_next_cluster(uint16_t cluster)
 {
@@ -86,14 +131,14 @@ uint16_t fat_get_next_cluster(uint16_t cluster)
 }
 
 // Funkcja zwraca długość łańcucha klastrów rozpoczynającego się w klastrze number start
-uint32_t fat_get_chain_length(uint16_t start)
+uint32_t fat_get_chain_length(uint32_t start)
 {
     // Długość łąńcucha klastrów i bieżący numer klastra
     uint32_t count = 0;
     uint16_t current = start;
 
     // Odczytywanie numberów kolejnych klastrów, aż do klastra kończącego
-    while(!FAT_CLUSTER_IS_END(current))
+    while(!fat_is_end_cluster(current))
     {
         count++;
         current = fat_table[current];
@@ -104,7 +149,7 @@ uint32_t fat_get_chain_length(uint16_t start)
 }
 
 // Funkcja znajdująca wpis w katalogu rozpoczynającym się w klastrze dir_start odpowiadający za plik o nazwie name
-int fat_get_entry_by_name(uint16_t dir_start, const char *name, struct fat_directory_entry_t *res_entry, uint32_t *dir_pos)
+int fat_get_entry_by_name(uint32_t dir_start, const char *name, struct fat_directory_entry_t *res_entry)
 {
     // Znalezienie liczby wpisów w katalogu
     uint32_t entries_count = fat_get_entries_count(dir_start);
@@ -126,7 +171,6 @@ int fat_get_entry_by_name(uint16_t dir_start, const char *name, struct fat_direc
         if(strcmp(name, filename) == 0)
         {
             *res_entry = entry;
-            if(dir_pos != NULL) *dir_pos = i;
             return 0;
         }
     }
@@ -143,7 +187,7 @@ int fat_get_entry_by_path(const char *path, struct fat_directory_entry_t *res_en
     if(token == NULL) return 1;
 
     // Rozpoczęcie poszukiwanie od katalogu głównego
-    uint16_t current_dir = 0;
+    uint32_t current_dir = 0;
     bool is_directory = true;
 
     struct fat_directory_entry_t entry;
@@ -155,7 +199,7 @@ int fat_get_entry_by_path(const char *path, struct fat_directory_entry_t *res_en
         if(!is_directory) { free(tokens); return 1; }
 
         // Znalezienie wpisu w aktualnym katalogu
-        int res = fat_get_entry_by_name(current_dir, token, &entry, NULL);
+        int res = fat_get_entry_by_name(current_dir, token, &entry);
         if(res != 0) { free(tokens); return 1; }
 
         // Znalezienie numeru startowego kolejnego katalogu/pliku i określenie czy jest katalogiem
@@ -172,7 +216,7 @@ int fat_get_entry_by_path(const char *path, struct fat_directory_entry_t *res_en
 }
 
 // Funkcja zwraca wpis w katalogu rozpoczynającym się w klastrze dir_start z pozycji dir_pos
-int fat_get_entry_by_pos(uint16_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry)
+int fat_get_entry_by_pos(uint32_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry)
 {
     // Przeszukiwanym katalogiem jest katalog główny
     if(dir_start == 0)
@@ -219,7 +263,7 @@ int fat_get_entry_by_pos(uint16_t dir_start, uint32_t dir_pos, struct fat_direct
 }
 
 // Funkcja zwraca długą nazwę dla krótkiego wpisu znajdującego się na danej pozycji
-int fat_get_long_filename(uint16_t dir_start, uint32_t dir_pos, char *long_filename)
+int fat_get_long_filename(uint32_t dir_start, uint32_t dir_pos, char *long_filename)
 {
     *long_filename = 0;
 
@@ -294,7 +338,7 @@ char *fat_join_filename(const char *name, const char *ext, char *result)
 	return result;
 }
 
-// Funckcja mówi czy dany wpis odpowiada za widoczny plik (Może on być też usunięty/wolny/pomocniczy)
+// Funckcja mówi czy dany wpis odpowiada za widoczny plik (Może on być też usunięty/wolny/...)
 bool fat_is_entry_visible(FENTRY *entry)
 {
 	if(entry->name[0] == FAT_ENTRY_FREE || entry->name[0] == FAT_ENTRY_DEL1 || entry->name[0] == FAT_ENTRY_DEL2) 
@@ -307,7 +351,7 @@ bool fat_is_entry_visible(FENTRY *entry)
 }
 
 // Funkcja zwraca liczbę wszystkich wpisów w katalogu (usuniętych, wolnych, zajętych, ...)
-uint32_t fat_get_entries_count(uint16_t dir_start)
+uint32_t fat_get_entries_count(uint32_t dir_start)
 {
     // Zwrócenie liczby wpisów w katalogu głównym
 	if(dir_start == 0)
@@ -384,10 +428,10 @@ void fat_get_cluster_summary(uint32_t *free, uint32_t *use, uint32_t *bad, uint3
         uint16_t val = fat_table[i];
 
         // Inkrementacja odpowiednich zmiennych
-        if(FAT_CLUSTER_IS_END(val) && val != FAT_CLUSTER_FREE && end) (*end)++;
-        if(val == FAT_CLUSTER_BAD && bad) (*bad)++;
-        if(val == FAT_CLUSTER_FREE && free) (*free)++;
-        if((FAT_CLUSTER_IS_DATA(val) || (FAT_CLUSTER_IS_END(val) && val != FAT_CLUSTER_FREE)) && use) (*use)++;
+        if(fat_is_end_cluster(val) && !fat_is_free_cluster(val) && end) (*end)++;
+        if(fat_is_bad_cluster(val) && bad) (*bad)++;
+        if(fat_is_free_cluster(val) && free) (*free)++;
+        else (*use)++;
     }
 }
 

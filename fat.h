@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#define FAT_12                  1
+#define FAT_16                  2
+
 #define FAT_END_SEQUENCE	    0xAA55
 #define FAT_BOOT_SIGNATURE	    0x29
 #define FAT_ENTRY_SIZE		    32
@@ -28,13 +31,6 @@
 
 #define FAT_CLUSTER_SIZE 		        (bs.bpb.sectors_per_cluster * bs.bpb.bytes_per_sector)
 #define FAT_GET_DATA_ADDR(__CLUSTER)    (alloc_area_addr + ((__CLUSTER) - 2) * FAT_CLUSTER_SIZE)
-
-#define FAT_CLUSTER_IS_END(__NUM) 		((__NUM)==0 || (__NUM)>0xFFF8)
-#define FAT_CLUSTER_IS_DATA(__NUM)		((__NUM)>=0x0002 && (__NUM)<0xFFEF)
-#define FAT_CLUSTER_FREE				0x0000
-#define FAT_CLUSTER_BAD					0xFFF5
-
-#define FAT_SECTOR_SIZE                 bs.bpb.bytes_per_sector
 
 struct fat_bpb_t
 {
@@ -104,19 +100,19 @@ struct fat_long_name_directory_entry_t
 
 typedef struct fat_directory_entry_t FENTRY;
 
-int fat16_mount(void);
-uint32_t fat_get_chain_length(uint16_t start);
-uint32_t fat_get_entries_count(uint16_t dir_start);
+int fat_mount(int version);
+uint32_t fat_get_chain_length(uint32_t start);
+uint32_t fat_get_entries_count(uint32_t dir_start);
 bool fat_is_entry_visible(struct fat_directory_entry_t *entry);
 struct tm fat_convert_time(uint16_t date, uint16_t time);
 char *fat_join_filename(const char *name, const char *ext, char *result);
 uint32_t fat_read_file(void *buffer, uint32_t start_cluster, uint32_t offset, uint32_t size);
 int fat_get_entry_by_path(const char *path, struct fat_directory_entry_t *res_entry);
-int fat_get_entry_by_pos(uint16_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry);
+int fat_get_entry_by_pos(uint32_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry);
 void fat_get_cluster_summary(uint32_t *free, uint32_t *use, uint32_t *bad, uint32_t *end);
 int fat_get_root_summary(uint32_t *free, uint32_t *used);
 void fat_get_boot_sector(struct fat_boot_sector_t *boot_sector);
-int fat_get_long_filename(uint16_t dir_start, uint32_t dir_pos, char *long_filename);
+int fat_get_long_filename(uint32_t dir_start, uint32_t dir_pos, char *long_filename);
 uint16_t fat_get_next_cluster(uint16_t cluster);
 void fat_display_info(void);
 

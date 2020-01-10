@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 
 	// Start
 	disc_set(disc);
-    int res = fat16_mount();
+    int res = fat_mount(FAT_12);
     if(res != 0)
     {
         printf("Unable to mount as FAT16\n");
