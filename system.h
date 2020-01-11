@@ -37,7 +37,7 @@ struct stat_t
 	bool archive;
 	bool device;
 	uint32_t clusters_count;
-	uint16_t first_cluster;
+	uint32_t first_cluster;
 };
 
 // Uchwyt do pliku
@@ -60,6 +60,6 @@ int stat(const char *path, STAT *stat);
 MYFILE *open(const char *path, const char *mode);
 void close(MYFILE *file);
 int read(void *buffer, uint32_t size, MYFILE *file);
-uint16_t get_next_cluster(uint16_t cluster);
+uint32_t get_next_cluster(uint32_t cluster);
 
 #endif

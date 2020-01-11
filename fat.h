@@ -5,6 +5,7 @@
 
 #define FAT_12                  1
 #define FAT_16                  2
+#define FAT_32                  3
 
 #define FAT_END_SEQUENCE	    0xAA55
 #define FAT_BOOT_SIGNATURE	    0x29
@@ -29,8 +30,7 @@
 #define FAT_ATTR_ARCHIVE 		0x20
 #define FAT_ATTR_DEVICE 		0x40
 
-#define FAT_CLUSTER_SIZE 		        (bs.bpb.sectors_per_cluster * bs.bpb.bytes_per_sector)
-#define FAT_GET_DATA_ADDR(__CLUSTER)    (alloc_area_addr + ((__CLUSTER) - 2) * FAT_CLUSTER_SIZE)
+#define FAT32_MASK              0x0FFFFFFF
 
 struct fat_bpb_t
 {
@@ -63,9 +63,31 @@ struct fat_boot_sector_t
 	uint8_t jump_addr[3];					// 0x000
 	uint8_t oem_name[8];					// 0x003
 	struct fat_bpb_t bpb;					// 0x00B
-	struct fat_ebpb_t ebpb;  				// 0x024
+	struct fat_ebpb_t ebpb;
 	uint8_t loader_code[448];				// 0x03E
 	uint16_t boot_sector_end;				// 0x1FE
+} __attribute__((packed));
+
+struct fat32_ebpb_t
+{
+    uint32_t sectors_per_table;
+    uint16_t drive_description;
+    uint16_t version;
+    uint32_t root_dir;
+    uint16_t fs_sector;
+    uint16_t copy_addr;
+    uint8_t reserved[12];
+} __attribute__((packed));
+
+struct fat32_boot_sector_t
+{
+    uint8_t jump_addr[3];					// 0x000
+    uint8_t oem_name[8];					// 0x003
+    struct fat_bpb_t bpb;					// 0x00B
+    struct fat32_ebpb_t ebpb32;
+    struct fat_ebpb_t ebpb;
+    uint8_t loader_code[420];				// 0x03E
+    uint16_t boot_sector_end;				// 0x1FE
 } __attribute__((packed));
 
 struct fat_directory_entry_t
@@ -100,7 +122,8 @@ struct fat_long_name_directory_entry_t
 
 typedef struct fat_directory_entry_t FENTRY;
 
-int fat_mount(int version);
+int fat_mount(void);
+int fat_mount_version(int version);
 uint32_t fat_get_chain_length(uint32_t start);
 uint32_t fat_get_entries_count(uint32_t dir_start);
 bool fat_is_entry_visible(struct fat_directory_entry_t *entry);
@@ -111,6 +134,7 @@ int fat_get_entry_by_path(const char *path, struct fat_directory_entry_t *res_en
 int fat_get_entry_by_pos(uint32_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry);
 void fat_get_cluster_summary(uint32_t *free, uint32_t *use, uint32_t *bad, uint32_t *end);
 int fat_get_root_summary(uint32_t *free, uint32_t *used);
+uint32_t fat_get_root_dir_addr(void);
 void fat_get_boot_sector(struct fat_boot_sector_t *boot_sector);
 int fat_get_long_filename(uint32_t dir_start, uint32_t dir_pos, char *long_filename);
 uint16_t fat_get_next_cluster(uint16_t cluster);

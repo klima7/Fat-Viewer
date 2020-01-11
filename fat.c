@@ -8,14 +8,33 @@
 
 int fat_version;                            // Wykorzystywana wersja FAT
 struct fat_boot_sector_t bs;                // Dane z boot sectora
+struct fat32_boot_sector_t *bs_view32;      // To samo co wyżej, ale nieco inna interpretacja pól
 uint32_t *fat_table;                        // Tablica FAT
 
 static uint32_t root_dir_addr;              // Adres katalogu głównego
 static uint32_t alloc_area_addr;            // Adres obszaru z klastrami
 static uint32_t fat_entries_count;          // Liczba wpisów w każdej tablicy fat
+static uint32_t fat_cluster_size;
 
-// Inicjowanie
-int fat_mount(int version)
+// Funkcja próbuje odczytać dysk za pomocą wszystkich obsługiwanych systemów plików
+int fat_mount(void)
+{
+    int mount_res = 0;
+
+    mount_res = fat_mount_version(FAT_32);
+    if(mount_res == 0) return FAT_32;
+
+    mount_res = fat_mount_version(FAT_16);
+    if(mount_res == 0) return FAT_16;
+
+    mount_res = fat_mount_version(FAT_12);
+    if(mount_res == 0) return FAT_12;
+
+    return 0;
+}
+
+// Montowanie
+int fat_mount_version(int version)
 {
     fat_version = version;
 
@@ -23,24 +42,66 @@ int fat_mount(int version)
 	int read_res = disc_readblock(&bs, 0, 1);
 	if(read_res != 1) return 1;
 
-	// Sprawdzenie poprawności bootsectora
-	if(bs.boot_sector_end != FAT_END_SEQUENCE) return 1;
-    if(!is_power_of_two(bs.bpb.bytes_per_sector)) return 1;
-    if(!is_power_of_two(bs.bpb.sectors_per_cluster) || bs.bpb.sectors_per_cluster>128) return 1;
-    if(bs.bpb.reserved_sectors<1) return 1;
-    if(bs.bpb.tables_count != 1 && bs.bpb.tables_count != 2) return 1;
-    if(bs.bpb.entries_in_root_directory == 0 || (bs.bpb.entries_in_root_directory*FAT_ENTRY_SIZE)%bs.bpb.bytes_per_sector!=0) return 1;
-    if(bs.bpb.all_sectors_1 == 0) return 1;
+	// ---------------Sprawdzenie poprawności bootsectora--------------------
 
-	// Obliczenie często używanych wartości
-	root_dir_addr = (bs.bpb.reserved_sectors + bs.bpb.sectors_per_table * bs.bpb.tables_count) * bs.bpb.bytes_per_sector;
-	alloc_area_addr = root_dir_addr + bs.bpb.entries_in_root_directory * FAT_ENTRY_SIZE;
-    fat_entries_count = bs.bpb.sectors_per_table * bs.bpb.bytes_per_sector / 2;
+    // Testy wspólne
+    if (bs.boot_sector_end != FAT_END_SEQUENCE) return 1;
+    if (!is_power_of_two(bs.bpb.bytes_per_sector)) return 1;
+    if (!is_power_of_two(bs.bpb.sectors_per_cluster) || bs.bpb.sectors_per_cluster > 128) return 1;
+    if (bs.bpb.reserved_sectors < 1) return 1;
+    if (bs.bpb.tables_count != 1 && bs.bpb.tables_count != 2) return 1;
 
-	// Odczyt tablic fat
+    // Testy charakterystyczne dla FAT12 i FAT16
+	if(version != FAT_32)
+	{
+        if(bs.bpb.entries_in_root_directory == 0 || (bs.bpb.entries_in_root_directory * FAT_ENTRY_SIZE) % bs.bpb.bytes_per_sector != 0) return 1;
+        if(bs.bpb.all_sectors_1 == 0 || bs.bpb.all_sectors_2 != 0) return 1;
+
+        if(fat_version==FAT_12)
+        {
+            if(bs.bpb.sectors_per_table < 1 || bs.bpb.sectors_per_table > 12) return 1;
+        }
+        if(fat_version==FAT_16)
+        {
+            if(bs.bpb.sectors_per_table < 16 || bs.bpb.sectors_per_table > 256) return 1;
+        }
+    }
+
+	// Testy charakterystyczne dla FAT32
+    else if(version == FAT_32)
+    {
+        bs_view32 = (struct fat32_boot_sector_t*)&bs;
+        if(bs.bpb.entries_in_root_directory != 0) return 1;
+        if(bs.bpb.sectors_per_table != 0) return 1;
+        if(bs.bpb.all_sectors_1 != 0 || bs.bpb.all_sectors_2 == 0) return 1;
+        if(bs_view32->ebpb32.root_dir == 0) return 1;
+
+        if(bs_view32->ebpb32.sectors_per_table < 512 || bs_view32->ebpb32.sectors_per_table > 2097152) return 1;
+    }
+
+    // -----------Obliczenie często wykorzystywanych wartości--------------
+    fat_cluster_size = bs.bpb.sectors_per_cluster * bs.bpb.bytes_per_sector;
+
+	if(version != FAT_32)
+	{
+        root_dir_addr =(bs.bpb.reserved_sectors + bs.bpb.sectors_per_table * bs.bpb.tables_count) * bs.bpb.bytes_per_sector;
+        alloc_area_addr = root_dir_addr + bs.bpb.entries_in_root_directory * FAT_ENTRY_SIZE;
+        if(version == FAT_16) fat_entries_count = bs.bpb.sectors_per_table * bs.bpb.bytes_per_sector / 2;
+        else if(version == FAT_12) fat_entries_count = bs.bpb.sectors_per_table * bs.bpb.bytes_per_sector  / 3 * 2;
+    }
+
+    else if(version == FAT_32)
+    {
+        root_dir_addr = bs_view32->ebpb32.root_dir;
+        alloc_area_addr = (bs.bpb.reserved_sectors + bs_view32->ebpb32.sectors_per_table * bs.bpb.tables_count) * bs.bpb.bytes_per_sector;
+        fat_entries_count = bs_view32->ebpb32.sectors_per_table * bs.bpb.bytes_per_sector / 4;
+    }
+
+    // ------------------------Odczyt tablic FAT--------------------------
 	uint32_t fat_size = 0;
 	if(version == FAT_16) fat_size = fat_entries_count*2;
 	else if(version == FAT_12) fat_size = fat_entries_count+fat_entries_count/2;
+    else if(version == FAT_32) fat_size = fat_entries_count+fat_entries_count*4;
 
     uint8_t fat[bs.bpb.tables_count][fat_size];
 
@@ -62,7 +123,7 @@ int fat_mount(int version)
         memcpy(fat[i], buffer+fat_start_disc_sector_offset, fat_size);
     }
 
-	// Porównanie zawartości tablic fat
+    // ------------------------Porównanie zawartości tablic FAT--------------------------
 	if(bs.bpb.tables_count == 2)
 	{
         for (uint32_t i = 0; i < fat_size; i++)
@@ -71,7 +132,7 @@ int fat_mount(int version)
         }
     }
 
-    // Zachowanie pierwszej tablicy fat
+    // ------------------------Zachowanie pierwszej tablicy FAT--------------------------
     fat_table = (uint32_t *)malloc(fat_entries_count*4);
 	if(fat_table == NULL) return 1;
 
@@ -91,8 +152,14 @@ int fat_mount(int version)
             if(i%2==0)
                 fat_table[i] = three[0] | (three[1] & 0x0F) << 8;
             else
-                fat_table[i] = (three[1] & 0xF0) | three[2] << 8;
-            printf("%d\n", fat_table[i]);
+                fat_table[i] = (three[1] & 0xF0) >> 4 | three[2] << 4;
+        }
+    }
+    if(version == FAT_32)
+    {
+        for(int i=0; i<fat_entries_count; i++)
+        {
+            fat_table[i] = ((uint32_t *) fat[0])[i];
         }
     }
 
@@ -107,8 +174,9 @@ int fat_mount(int version)
 // Czy klaster jest kończący
 int fat_is_end_cluster(uint32_t value)
 {
-    if(fat_version == FAT_16) return (value == 0xFFF8 || value == 0);
+    if(fat_version == FAT_16) return (value >= 0xFFF8 || value == 0);
     else if(fat_version == FAT_12) return (value >= 0xFF8 || value == 0);
+    else if(fat_version == FAT_32) return (value >= 0x0FFFFFF8 || value == 0);
 }
 
 // Czy klaster jest wolny
@@ -120,8 +188,14 @@ int fat_is_free_cluster(uint32_t value)
 // Czy klaster jest nieprawidłowy
 int fat_is_bad_cluster(uint32_t value)
 {
-    if(fat_version == FAT_16) return value == 0xFFF5;
-    else if(fat_version == FAT_12) return value == 0xFF5;
+    if(fat_version == FAT_16) return value == 0xFFF7;
+    else if(fat_version == FAT_12) return value == 0xFF7;
+    else if(fat_version == FAT_32) return value & FAT32_MASK == 0x0FFFFFF7;
+}
+
+uint32_t fat_get_data_addr(uint32_t cluster)
+{
+    return alloc_area_addr + (cluster - 2) * fat_cluster_size;
 }
 
 // funkcja zwraca numer następnego klastra lub 0 jeśli kolejny klaster nie istnieje
@@ -135,7 +209,7 @@ uint32_t fat_get_chain_length(uint32_t start)
 {
     // Długość łąńcucha klastrów i bieżący numer klastra
     uint32_t count = 0;
-    uint16_t current = start;
+    uint32_t current = start;
 
     // Odczytywanie numberów kolejnych klastrów, aż do klastra kończącego
     while(!fat_is_end_cluster(current))
@@ -187,7 +261,7 @@ int fat_get_entry_by_path(const char *path, struct fat_directory_entry_t *res_en
     if(token == NULL) return 1;
 
     // Rozpoczęcie poszukiwanie od katalogu głównego
-    uint32_t current_dir = 0;
+    uint32_t current_dir = fat_version == FAT_32 ? bs_view32->ebpb32.root_dir : 0;
     bool is_directory = true;
 
     struct fat_directory_entry_t entry;
@@ -218,7 +292,7 @@ int fat_get_entry_by_path(const char *path, struct fat_directory_entry_t *res_en
 // Funkcja zwraca wpis w katalogu rozpoczynającym się w klastrze dir_start z pozycji dir_pos
 int fat_get_entry_by_pos(uint32_t dir_start, uint32_t dir_pos, struct fat_directory_entry_t *res_entry)
 {
-    // Przeszukiwanym katalogiem jest katalog główny
+    // Przeszukiwanym katalogiem jest katalog główny w fat12 lub fat16
     if(dir_start == 0)
     {
         // Znalezienie sektora z wpisem
@@ -237,7 +311,7 @@ int fat_get_entry_by_pos(uint32_t dir_start, uint32_t dir_pos, struct fat_direct
         return 0;
     }
 
-    // Przeszukiwanym katalogiem jest jakiś podkatalog
+    // Przeszukiwanym katalogiem jest jakiś podkatalog (lub katalog gówny w fat32)
    else
     {
         // Obliczenie przesunięcia od początku katalogu
@@ -245,15 +319,15 @@ int fat_get_entry_by_pos(uint32_t dir_start, uint32_t dir_pos, struct fat_direct
 
         // Znalezienie klastra z wpisem
         uint32_t current_cluster = dir_start;
-        while (entry_offset >= FAT_CLUSTER_SIZE) {
+        while (entry_offset >= fat_cluster_size) {
             current_cluster = fat_table[current_cluster];
-            entry_offset -= FAT_CLUSTER_SIZE;
+            entry_offset -= fat_cluster_size;
         }
 
         // Odczyt odpowiedniego klastra
-        uint8_t cluster[FAT_CLUSTER_SIZE];
-        int res = disc_readblock(cluster, FAT_GET_DATA_ADDR(current_cluster) / DISC_SECTOR_SIZE, FAT_CLUSTER_SIZE / DISC_SECTOR_SIZE);
-        if (res != FAT_CLUSTER_SIZE / DISC_SECTOR_SIZE) return 1;
+        uint8_t cluster[fat_cluster_size];
+        int res = disc_readblock(cluster, fat_get_data_addr(current_cluster) / DISC_SECTOR_SIZE, fat_cluster_size / DISC_SECTOR_SIZE);
+        if (res != fat_cluster_size / DISC_SECTOR_SIZE) return 1;
 
         // Zwrócenie znalezionego wpisu
         struct fat_directory_entry_t *entry = (struct fat_directory_entry_t *) (cluster + entry_offset);
@@ -334,30 +408,30 @@ char *fat_join_filename(const char *name, const char *ext, char *result)
 		strcat(result, ".");
 		strcat(result, ext2);
 	}
-	
+
 	return result;
 }
 
 // Funckcja mówi czy dany wpis odpowiada za widoczny plik (Może on być też usunięty/wolny/...)
 bool fat_is_entry_visible(FENTRY *entry)
 {
-	if(entry->name[0] == FAT_ENTRY_FREE || entry->name[0] == FAT_ENTRY_DEL1 || entry->name[0] == FAT_ENTRY_DEL2) 
+	if(entry->name[0] == FAT_ENTRY_FREE || entry->name[0] == FAT_ENTRY_DEL1 || entry->name[0] == FAT_ENTRY_DEL2)
 		return false;
 
 	if(entry->attr & FAT_ATTR_SYSTEM || entry->attr & FAT_ATTR_VOLUME)
 		return false;
-		
+
 	return true;
 }
 
 // Funkcja zwraca liczbę wszystkich wpisów w katalogu (usuniętych, wolnych, zajętych, ...)
 uint32_t fat_get_entries_count(uint32_t dir_start)
 {
-    // Zwrócenie liczby wpisów w katalogu głównym
+    // Zwrócenie liczby wpisów w katalogu głównym w fat12 i fat16
 	if(dir_start == 0)
 		return bs.bpb.entries_in_root_directory;
 
-	// Zwrócenie liczby wpisów w podkatalogu
+	// Zwrócenie liczby wpisów w podkataloguw fat12 i fat16 (lub w katalogu głównym w fat32)
     uint32_t count = 0;
     for(uint32_t i=0; ; i++)
     {
@@ -374,19 +448,19 @@ uint32_t fat_read_file(void *buffer, uint32_t start_cluster, uint32_t offset, ui
 {
     // Znalezienie pierwszego klastra do odczytu
 	uint32_t current_cluster = start_cluster;
-	while(offset >= FAT_CLUSTER_SIZE)
+	while(offset >= fat_cluster_size)
 	{
         current_cluster = fat_table[current_cluster];
-		offset -= FAT_CLUSTER_SIZE;
+		offset -= fat_cluster_size;
 	}
 
 	// Liczba bajtów którą udało się odczytać
 	uint32_t bytes_read = 0;
 
 	// Aktualnie czytany klaster
-	uint8_t cluster[FAT_CLUSTER_SIZE];
-	int res = disc_readblock(cluster, FAT_GET_DATA_ADDR(current_cluster) / DISC_SECTOR_SIZE, FAT_CLUSTER_SIZE / DISC_SECTOR_SIZE);
-    if(res != FAT_CLUSTER_SIZE / DISC_SECTOR_SIZE) return bytes_read;
+	uint8_t cluster[fat_cluster_size];
+	int res = disc_readblock(cluster, fat_get_data_addr(current_cluster) / DISC_SECTOR_SIZE, fat_cluster_size / DISC_SECTOR_SIZE);
+    if(res != fat_cluster_size / DISC_SECTOR_SIZE) return bytes_read;
 
     // Odczytywanie żądanej liczby bajtów
 	for(uint32_t i=0; i<size; i++)
@@ -396,12 +470,12 @@ uint32_t fat_read_file(void *buffer, uint32_t start_cluster, uint32_t offset, ui
         bytes_read++;
 
         // Gdy wyjdziemy poza aktualny klaster odczytujemy kolejny
-        if(offset >= FAT_CLUSTER_SIZE)
+        if(offset >= fat_cluster_size)
         {
             offset = 0;
             current_cluster = fat_table[current_cluster];
-            int res = disc_readblock(cluster, FAT_GET_DATA_ADDR(current_cluster) / DISC_SECTOR_SIZE, FAT_CLUSTER_SIZE / DISC_SECTOR_SIZE);
-            if(res != FAT_CLUSTER_SIZE / DISC_SECTOR_SIZE) return bytes_read;
+            int res = disc_readblock(cluster, fat_get_data_addr(current_cluster) / DISC_SECTOR_SIZE, fat_cluster_size / DISC_SECTOR_SIZE);
+            if(res != fat_cluster_size / DISC_SECTOR_SIZE) return bytes_read;
         }
     }
 
@@ -418,14 +492,11 @@ void fat_get_cluster_summary(uint32_t *free, uint32_t *use, uint32_t *bad, uint3
     if(bad) *bad = 0;
     if(end) *end = 0;
 
-    // Obliczenie liczby komórek w tablicy fat
-    uint32_t cells_count = bs.bpb.sectors_per_table * bs.bpb.bytes_per_sector / 2;
-
     // Iterowanie po komórkach talicy fat i klasyfikowanie klastrów
-    for(uint32_t i=0; i<cells_count; i++)
+    for(uint32_t i=0; i<fat_entries_count; i++)
     {
         // Pobranie komórki z tablicy fat
-        uint16_t val = fat_table[i];
+        uint32_t val = fat_table[i];
 
         // Inkrementacja odpowiednich zmiennych
         if(fat_is_end_cluster(val) && !fat_is_free_cluster(val) && end) (*end)++;
@@ -439,7 +510,7 @@ void fat_get_cluster_summary(uint32_t *free, uint32_t *use, uint32_t *bad, uint3
 int fat_get_root_summary(uint32_t *free, uint32_t *used)
 {
     // Sprawdzenie poprawności argumentów
-    if(!free || !used) return 1;
+    if(!free || !used || fat_version == FAT_32) return 1;
 
     // Zerowanie zmiennych
     *free = 0;
@@ -460,6 +531,12 @@ int fat_get_root_summary(uint32_t *free, uint32_t *used)
     return 0;
 }
 
+uint32_t fat_get_root_dir_addr(void)
+{
+    if(fat_version == FAT_32) return bs_view32->ebpb32.root_dir;
+    else return 0;
+}
+
 // Funkcja zwracająca boot sector
 void fat_get_boot_sector(struct fat_boot_sector_t *boot_sector)
 {
@@ -470,15 +547,15 @@ void fat_get_boot_sector(struct fat_boot_sector_t *boot_sector)
 struct tm fat_convert_time(uint16_t date, uint16_t time)
 {
 	struct tm res;
-	
+
 	res.tm_sec = (time & 0x001F) * 2;
 	res.tm_min = (time & 0x07E0) >> 5;
 	res.tm_hour = (time & 0xF800) >> 11;
-	
+
 	res.tm_mday = (date & 0x001F);
 	res.tm_mon = ((date & 0x01E0) >> 5) - 1;
 	res.tm_year = ((date & 0xFE00) >> 9) + 80;
-	
+
 	return res;
 }
 
@@ -506,7 +583,10 @@ void fat_display_info(void)
     printf("%-30s %u\n", "Max entries in root dir", temp);
 
     temp = bs.bpb.all_sectors_1;
-    printf("%-30s %u\n", "All sectors count", temp);
+    printf("%-30s %u\n", "All sectors count 1", temp);
+
+    temp = bs.bpb.all_sectors_2;
+    printf("%-30s %u\n", "All sectors count 2", temp);
 
     temp = bs.bpb.media_type;
     printf("%-30s %u\n", "Media type", temp);
@@ -522,9 +602,6 @@ void fat_display_info(void)
 
     temp = bs.bpb.hidden_sectors;
     printf("%-30s %u\n", "Hidden sectors count", temp);
-
-    temp = bs.bpb.all_sectors_2;
-    printf("%-30s %u\n", "All sectors count", temp);
 
     printf("%-31s", "Drive number");
     uint8_t drive_number = bs.ebpb.drive_number;

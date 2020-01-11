@@ -26,13 +26,12 @@ int main(int argc, char **argv)
 
 	// Start
 	disc_set(disc);
-    int res = fat_mount(FAT_12);
-    if(res != 0)
-    {
-        printf("Unable to mount as FAT16\n");
-        return 0;
-    }
-	terminal_run();
+    int mount_res = fat_mount();
+    if(mount_res == FAT_12) printf("==========DISC MOUNTED AS FAT12==========\n");
+    else if(mount_res == FAT_16) printf("==========DISC MOUNTED AS FAT16==========\n");
+    else if(mount_res == FAT_32) printf("==========DISC MOUNTED AS FAT32==========\n");
+    else if(mount_res == 0) { printf("==========UNABLE TO MOUNT DISC==========\n"); return 0; }
 
+	terminal_run();
 	return 0;
 }

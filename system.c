@@ -13,7 +13,7 @@ DIR *opendir(const char *path)
 	int res = stat(path, &info);
 	if(strcmp(path, "/") != 0 && (res || !info.directory)) return NULL;
 
-	uint16_t first_cluster = res ? 0 : info.first_cluster;
+	uint16_t first_cluster = res ? fat_get_root_dir_addr() : info.first_cluster;
 
 	// Zaalokowanie uchwytu do katalogu
 	DIR *dir = (DIR *)malloc(sizeof(DIR));
@@ -136,7 +136,7 @@ int read(void *buffer, uint32_t size, MYFILE *file)
 	return read_count;
 }
 
-uint16_t get_next_cluster(uint16_t cluster)
+uint32_t get_next_cluster(uint32_t cluster)
 {
     int err = 0;
     return fat_get_next_cluster(cluster);

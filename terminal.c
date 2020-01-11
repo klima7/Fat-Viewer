@@ -202,11 +202,11 @@ static void terminal_command_fileinfo(int argc, char *argv)
         printf("[%hu] ", info.first_cluster);
 
 	// Wyświetlenie reszty klastrów
-	uint16_t cluster = info.first_cluster;
+	uint32_t cluster = info.first_cluster;
     for(uint32_t i=1; i<info.clusters_count; i++)
     {
         cluster = get_next_cluster(cluster);
-        printf("%hu ", cluster);
+        printf("%u ", cluster);
     }
     printf("\n");
 }
@@ -312,7 +312,7 @@ static void terminal_command_rootinfo(int argc, char *argv)
     int res = fat_get_root_summary(&free, &used);
     if(res)
     {
-        printf("Unable to execute\n");
+        printf("Unable to get root directory info\n");          // Między innymi gdy system to FAT_32
         return;
     }
 
