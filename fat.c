@@ -164,7 +164,6 @@ int fat_mount_version(int version)
     }
 
     // Wyświetlenie danych z bootsectora
-    printf("---------------Disc Info---------------\n");
     fat_display_info();
     printf("\n");
 
@@ -561,6 +560,8 @@ struct tm fat_convert_time(uint16_t date, uint16_t time)
 
 void fat_display_info(void)
 {
+    printf("=============BOOTSECTOR INFO=============\n");
+
     unsigned int temp = 0;
 
     printf("%-31s", "OEM name");
@@ -609,15 +610,45 @@ void fat_display_info(void)
     if(drive_number & 0x80) printf("(fixed)\n");
     else printf("(not fixed)\n");
 
-    // Jeżeli to pole jest inne to następne są nieważne
-    if(bs.ebpb.boot_signature != FAT_BOOT_SIGNATURE)
-        return;
+    if(fat_version != FAT_32)
+    {
+        // Jeżeli to pole jest inne to następne są nieważne
+        if (bs.ebpb.boot_signature != FAT_BOOT_SIGNATURE)
+            return;
 
-    printf("%-31s", "Volume label");
-    display_ascii_line(bs.ebpb.volume_label, 11);
-    printf("\n");
+        printf("%-31s", "Volume label");
+        display_ascii_line(bs.ebpb.volume_label, 11);
+        printf("\n");
 
-    printf("%-31s", "File system type");
-    display_ascii_line(bs.ebpb.fs_type, 8);
-    printf("\n");
+        printf("%-31s", "File system type");
+        display_ascii_line(bs.ebpb.fs_type, 8);
+        printf("\n");
+    }
+
+    if(fat_version == FAT_32)
+    {
+        temp = bs_view32->ebpb32.sectors_per_table;
+        printf("%-30s %u\n", "FAT32 sectors per table", temp);
+
+        temp = bs_view32->ebpb32.root_dir;
+        printf("%-30s %u\n", "FAT32 root cluster", temp);
+
+        temp = bs_view32->ebpb32.fs_sector;
+        printf("%-30s %u\n", "FAT32 fs sector", temp);
+
+        temp = bs_view32->ebpb32.copy_addr;
+        printf("%-30s %u\n", "FAT32 Backup sector", temp);
+
+        // Jeżeli to pole jest inne to następne są nieważne
+        if (bs_view32->ebpb.boot_signature != FAT_BOOT_SIGNATURE)
+            return;
+
+        printf("%-31s", "Volume label");
+        display_ascii_line(bs_view32->ebpb.volume_label, 11);
+        printf("\n");
+
+        printf("%-31s", "File system type");
+        display_ascii_line(bs_view32->ebpb.fs_type, 8);
+        printf("\n");
+    }
 }
